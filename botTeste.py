@@ -31,12 +31,13 @@ INTERVALO_PROPAGANDA_MINUTOS = 5      # Mensagem enviada a cada 5 minutos
 bot = telebot.TeleBot(BOT_TOKEN)
 DB_FILE = 'controle_teste_vip.json'
 
-# Dicionário para armazenar o ID da última mensagem enviada em cada grupo
-mensagens_anteriores = {}
+# Lock de segurança para evitar corrupção do JSON ao acessar por múltiplas threads
+db_lock = threading.Lock()
 
 # --- MINI SERVIDOR WEB PARA PLANO 100% GRATUITO NO RENDER ---
 def rodar_servidor_web():
     port = int(os.environ.get("PORT", 8080))
+    socketserver.TCPServer.allow_reuse_address = True
     handler = http.server.SimpleHTTPRequestHandler
     try:
         with socketserver.TCPServer(("", port), handler) as httpd:
@@ -44,16 +45,28 @@ def rodar_servidor_web():
     except Exception as e:
         print(f"Servidor web: {e}")
 
-# --- BANCO DE DADOS LOCAL ---
+# --- BANCO DE DADOS LOCAL (COM SEGURANÇA THREAD-SAFE) ---
 def carregar_db():
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, 'r') as f:
-            return json.load(f)
-    return {"historico": [], "ativos": {}}
+    with db_lock:
+        if os.path.exists(DB_FILE):
+            with open(DB_FILE, 'r') as f:
+                try:
+                    dados = json.load(f)
+                    if "mensagens_anteriores" not in dados:
+                        dados["mensagens_anteriores"] = {}
+                    if "historico" not in dados:
+                        dados["historico"] = []
+                    if "ativos" not in dados:
+                        dados["ativos"] = {}
+                    return dados
+                except Exception:
+                    pass
+        return {"historico": [], "ativos": {}, "mensagens_anteriores": {}}
 
 def salvar_db(db):
-    with open(DB_FILE, 'w') as f:
-        json.dump(db, f)
+    with db_lock:
+        with open(DB_FILE, 'w') as f:
+            json.dump(db, f)
 
 # --- 1. DIVULGAÇÃO AUTOMÁTICA EM TODOS OS GRUPOS (COM AUTO-DELETAR) ---
 def enviar_propaganda():
@@ -63,15 +76,18 @@ def enviar_propaganda():
         markup.add(btn)
         
         for grupo_id in GRUPOS_PUBLICOS_IDS:
-            # 1. Tenta apagar a mensagem anterior enviada no grupo
-            if grupo_id in mensagens_anteriores:
-                try:
-                    bot.delete_message(grupo_id, mensagens_anteriores[grupo_id])
-                    print(f"Mensagem antiga apagada com sucesso no grupo: {grupo_id}")
-                except Exception as e:
-                    print(f"Não foi possível apagar mensagem antiga no grupo {grupo_id}: {e}")
+            db = carregar_db()
+            mensagens = db.get("mensagens_anteriores", {})
             
-            # 2. Envia a nova mensagem e salva o ID para a próxima rodada
+            # 1. Apaga a mensagem anterior salva no banco
+            if grupo_id in mensagens:
+                try:
+                    bot.delete_message(grupo_id, mensagens[grupo_id])
+                    print(f"Mensagem antiga {mensagens[grupo_id]} apagada no grupo: {grupo_id}")
+                except Exception as e:
+                    print(f"Não foi possível apagar no grupo {grupo_id}: {e}")
+            
+            # 2. Envia a nova mensagem e salva o ID no banco
             try:
                 msg_enviada = bot.send_message(
                     grupo_id, 
@@ -79,7 +95,11 @@ def enviar_propaganda():
                     reply_markup=markup,
                     parse_mode="Markdown"
                 )
-                mensagens_anteriores[grupo_id] = msg_enviada.message_id
+                
+                db = carregar_db()
+                db["mensagens_anteriores"][grupo_id] = msg_enviada.message_id
+                salvar_db(db)
+                
                 print(f"Propaganda enviada para o grupo: {grupo_id}")
             except Exception as e:
                 print(f"Erro ao enviar para o grupo {grupo_id}: {e}")
@@ -91,7 +111,7 @@ def enviar_propaganda():
 # --- 2. RECEPÇÃO NO PRIVADO E ENTREGA DO LINK ---
 @bot.message_handler(commands=['start'])
 def processar_teste(message):
-    texto = message.text
+    texto = message.text.strip()
     user_id = str(message.chat.id)
     
     if texto == '/start teste':
@@ -124,6 +144,12 @@ def processar_teste(message):
         except Exception as e:
             bot.send_message(user_id, "Erro ao gerar seu acesso. Certifique-se de que o bot é Administrador do Grupo VIP.")
             print(f"Erro na criação do link: {e}")
+    else:
+        # Resposta padrão caso a pessoa envie apenas /start sem clicar no botão de teste
+        bot.send_message(
+            user_id,
+            "👋 Olá! Clique no botão de teste em um de nossos grupos para resgatar seus 10 minutos de acesso VIP gratuito."
+        )
 
 # --- 3. INSPETOR (EXPULSA APÓS 10 MINUTOS) ---
 def vigia_de_expulsao():
@@ -146,8 +172,10 @@ def vigia_de_expulsao():
                 usuarios_vencidos.append(user_id)
         
         if usuarios_vencidos:
+            db = carregar_db()
             for u in usuarios_vencidos:
-                del db['ativos'][u]
+                if u in db['ativos']:
+                    del db['ativos'][u]
             salvar_db(db)
             
         time.sleep(15)
@@ -160,4 +188,4 @@ if __name__ == '__main__':
     
     print("Bot otimizado e rodando em todos os grupos...")
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
-            
+                        
