@@ -11,7 +11,7 @@ import socketserver
 # ==========================================
 # ⚙️ SUAS CONFIGURAÇÕES
 # ==========================================
-BOT_TOKEN = '8987873672:AAEZWHValZ7a0_pR9n7QsGo5v98t3gQ-6gY'          # Insira o Token do seu Bot
+BOT_TOKEN = '8987873672:AAEZWHValZ7a0_pR9n7QsGo5v98t3gQ-6gY'          # Token do seu Bot
 BOT_USERNAME = 'T33sty67bot'           # Nome do seu bot SEM O @
 
 # 🚀 LISTA DE GRUPOS ONDE O BOT VAI DIVULGAR:
@@ -34,7 +34,7 @@ DB_FILE = 'controle_teste_vip.json'
 # Dicionário para armazenar o ID da última mensagem enviada em cada grupo
 mensagens_anteriores = {}
 
-# --- MINI SERVIDOR WEB PARA LIBERAR PLANO 100% GRATUITO NO RENDER ---
+# --- MINI SERVIDOR WEB PARA PLANO 100% GRATUITO NO RENDER ---
 def rodar_servidor_web():
     port = int(os.environ.get("PORT", 8080))
     handler = http.server.SimpleHTTPRequestHandler
@@ -63,7 +63,7 @@ def enviar_propaganda():
         markup.add(btn)
         
         for grupo_id in GRUPOS_PUBLICOS_IDS:
-            # 1. Tenta apagar a mensagem anterior enviada no grupo, se existir
+            # 1. Tenta apagar a mensagem anterior enviada no grupo
             if grupo_id in mensagens_anteriores:
                 try:
                     bot.delete_message(grupo_id, mensagens_anteriores[grupo_id])
@@ -71,7 +71,7 @@ def enviar_propaganda():
                 except Exception as e:
                     print(f"Não foi possível apagar mensagem antiga no grupo {grupo_id}: {e}")
             
-            # 2. Envia a nova mensagem e salva o ID para apagar na próxima rodada
+            # 2. Envia a nova mensagem e salva o ID para a próxima rodada
             try:
                 msg_enviada = bot.send_message(
                     grupo_id, 
@@ -154,13 +154,10 @@ def vigia_de_expulsao():
 
 # --- EXECUÇÃO PRINCIPAL ---
 if __name__ == '__main__':
-    # Inicia o servidor web interno para manter o Render em plano gratuito
     threading.Thread(target=rodar_servidor_web, daemon=True).start()
-    
-    # Inicia as rotinas do Telegram
     threading.Thread(target=enviar_propaganda, daemon=True).start()
     threading.Thread(target=vigia_de_expulsao, daemon=True).start()
     
     print("Bot otimizado e rodando em todos os grupos...")
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
-                      
+            
