@@ -5,6 +5,8 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
+import http.server
+import socketserver
 
 # ==========================================
 # ⚙️ SUAS CONFIGURAÇÕES
@@ -28,6 +30,16 @@ INTERVALO_PROPAGANDA_MINUTOS = 5      # Mensagem enviada a cada 5 minutos
 
 bot = telebot.TeleBot(BOT_TOKEN)
 DB_FILE = 'controle_teste_vip.json'
+
+# --- MINI SERVIDOR WEB PARA LIBERAR PLANO 100% GRATUITO NO RENDER ---
+def rodar_servidor_web():
+    port = int(os.environ.get("PORT", 8080))
+    handler = http.server.SimpleHTTPRequestHandler
+    try:
+        with socketserver.TCPServer(("", port), handler) as httpd:
+            httpd.serve_forever()
+    except Exception as e:
+        print(f"Servidor web: {e}")
 
 # --- BANCO DE DADOS LOCAL ---
 def carregar_db():
@@ -129,8 +141,13 @@ def vigia_de_expulsao():
 
 # --- EXECUÇÃO PRINCIPAL ---
 if __name__ == '__main__':
+    # Inicia o servidor web interno para manter o Render em plano gratuito
+    threading.Thread(target=rodar_servidor_web, daemon=True).start()
+    
+    # Inicia as rotinas do Telegram
     threading.Thread(target=enviar_propaganda, daemon=True).start()
     threading.Thread(target=vigia_de_expulsao, daemon=True).start()
     
     print("Bot otimizado e rodando em todos os grupos...")
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
+            
